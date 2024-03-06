@@ -11,10 +11,7 @@ namespace Shop.ApiGateway.Controllers.Order.CreateOrder.Handlers.Shipping
         private static Random _random = new();
         public async Task Handle(ProductReservedEvent notification, CancellationToken cancellationToken)
         {
-            //Book logistics
-            await Task.Delay(200, cancellationToken);
-
-            //Should be an external call
+            //Simulate Shipping
             notification.Data.Shipping.EstimatedDelivery = DateTime.UtcNow.AddDays(3);
             notification.Data.Shipping.TrackingNumber = $"TR{_random.Next(100000000, 999999999)}SE";
         }
