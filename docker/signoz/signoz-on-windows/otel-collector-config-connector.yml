@@ -1,0 +1,40 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+
+  rabbitmq:
+    endpoint: http://rabbitmq:15672
+    username: rabbitmq_user
+    password: rabbitmq_password
+    collection_interval: 10s
+    tls:
+      insecure: true
+
+exporters:  
+  logging:
+    loglevel: debug
+      
+  otlp/siqnoz:
+    endpoint: "signoz-collector:4317"
+    tls:
+      insecure: true
+
+processors:
+  batch:
+
+service:
+  pipelines: 
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [logging, otlp/siqnoz]
+    metrics:
+      receivers: [otlp, rabbitmq]
+      processors: [batch]
+      exporters: [logging, otlp/siqnoz]    
+    logs:
+      receivers: [otlp]
+      processors: []
+      exporters: [logging, otlp/siqnoz]    

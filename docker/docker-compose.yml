@@ -1,0 +1,215 @@
+version: "3.5"
+services:
+  zipkin:
+    networks:
+      - backend
+    image: openzipkin/zipkin:${ZIPKIN_IMAGE_TAG:-latest}
+    ports:
+      - "9411:9411"
+  seq:  
+    networks:
+      - backend
+    container_name: seq
+    image: datalust/seq:${SEQ_IMAGE_TAG:-latest}
+    ports:
+      - "5341:80"
+      - "5342:5342"
+      - "45341:45341"
+    environment:
+      - ACCEPT_EULA=Y
+
+  jaeger:
+    networks:
+      - backend
+    image: jaegertracing/all-in-one:${JAEGER_IMAGE_TAG:-latest}
+    volumes:
+      - "./jaeger-ui.json:/etc/jaeger/jaeger-ui.json"
+    command: --query.ui-config /etc/jaeger/jaeger-ui.json
+    environment:
+      - METRICS_STORAGE_TYPE=prometheus
+      - PROMETHEUS_SERVER_URL=http://prometheus:9090
+      - PROMETHEUS_QUERY_SUPPORT_SPANMETRICS_CONNECTOR=${PROMETHEUS_QUERY_SUPPORT_SPANMETRICS_CONNECTOR:-true}
+      - PROMETHEUS_QUERY_NAMESPACE=${PROMETHEUS_QUERY_NAMESPACE:-}
+      - PROMETHEUS_QUERY_DURATION_UNIT=${PROMETHEUS_QUERY_DURATION_UNIT:-}
+      - PROMETHEUS_QUERY_NORMALIZE_CALLS=true
+      - PROMETHEUS_QUERY_NORMALIZE_DURATION=true
+    ports:
+      - "16686:16686"
+  otel_collector:
+    networks:
+      - backend
+    image: otel/opentelemetry-collector-contrib:${OTEL_IMAGE_TAG:-0.93.0}
+    volumes:
+      - ${OTEL_CONFIG_SRC:-./otel-collector-config-connector.yml}:/etc/otelcol/otel-collector-config.yml
+    command: --config /etc/otelcol/otel-collector-config.yml
+    ports:
+    - "8888:8888"   # Prometheus metrics exposed by the collector
+    - "8889:8889"   # Prometheus exporter metrics
+    depends_on:
+      - jaeger
+      - zipkin
+      - seq
+
+  adminer_db:
+    networks:
+      - backend
+    image: adminer:${ADMINER_DB_IMAGE_TAG:-latest}
+    environment:
+      ADMINER_DEFAULT_SERVER: order_db
+    ports:
+      - 7070:8080
+
+  prometheus:
+    networks:
+      - backend
+    image: prom/prometheus:${PROMETHEUS_IMAGE_TAG:-latest}
+    volumes:
+      - "./prometheus.yml:/etc/prometheus/prometheus.yml"
+    ports:
+      - "9090:9090"
+  
+  shop_apigateway:
+    restart: on-failure
+    networks:
+      - backend
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel_collector:4317
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-rabbitmq_user}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-rabbitmq_password}
+      - RABBITMQ_HOST=rabbitmq
+    ports:
+      - "8080:8080"
+    image: shop.apigateway:${SHOP_APIGATEWAY_IMAGE_TAG:-latest}
+    depends_on: 
+      - otel_collector
+      - order_service
+      - product_service
+      - email_service
+      - rabbitmq
+  email_service:
+    networks:
+      - backend
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel_collector:4317
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-rabbitmq_user}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-rabbitmq_password}
+      - RABBITMQ_HOST=rabbitmq
+    image: email.service:${EMAIL_SERVICE_IMAGE_TAG:-latest}
+    depends_on: 
+      - otel_collector
+      - rabbitmq
+  update_receptionist_service:
+    networks:
+      - backend
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel_collector:4317
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-rabbitmq_user}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-rabbitmq_password}
+      - RABBITMQ_HOST=rabbitmq
+    image: update_receptionist.service:${UPDATE_RECEPTIONIST_IMAGE_TAG:-latest}
+    depends_on: 
+      - otel_collector
+      - rabbitmq
+      - product_service
+  product_service:
+    image: product.service:${PRODUCT_SERVICE_IMAGE_TAG:-latest}
+    networks:
+      - backend
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel_collector:4317    
+      - "DB_HOST=product_database"
+      - "DB_HOST_PORT=5432"
+      - DB_USER=${PRODUCT_DATABASE_USER:-product_database_user}
+      - DB_PASS=${PRODUCT_DATABASE_PASSWORD:-product_database_password}
+      - DB_DATABASE=${PRODUCT_DATABASE:-products} 
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-rabbitmq_user}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-rabbitmq_password}
+      - RABBITMQ_HOST=rabbitmq
+    ports:
+      - "50051:50051"
+    depends_on: 
+      - otel_collector
+      - rabbitmq
+  product_database:
+    restart: on-failure
+    image: postgres:${POSTGRES_IMAGE_TAG:-16}
+    networks:
+      - backend
+    environment:
+      - POSTGRES_PASSWORD=${PRODUCT_DATABASE_PASSWORD:-product_database_password}
+      - POSTGRES_USER=${PRODUCT_DATABASE_USER:-product_database_user}
+      - POSTGRES_DB=${PRODUCT_DATABASE:-products}
+    ports:
+      - 5432:5432
+    volumes:
+      - ../src/ObservableShop/Product.Database/db.sql:/docker-entrypoint-initdb.d/init.sql
+  payment_service:  
+    restart: on-failure
+    networks:
+      - backend
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel_collector:4317      
+    ports:
+      - "8082:8080"
+    image: payment.service:${PAYMENT_SERVICE_IMAGE_TAG:-latest}
+    depends_on: 
+      - otel_collector
+  order_service:
+    restart: on-failure
+    networks:
+      - backend
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel_collector:4317
+      - "DB_ENDPOINT=order_db:3306"
+      - DB_USER=${ORDER_DATABASE_USER:-order_db_user}
+      - DB_PASS=${ORDER_DATABASE_PASSWORD:-order_db_password}
+      - DB_DATABASE=${ORDER_DATABASE:-orders}
+    ports:
+      - "8081:8080"
+    image: order.service:${ORDER_SERVICE_IMAGE_TAG:-latest}
+    depends_on: 
+      - otel_collector
+      - order_db
+  order_db:
+    networks:
+      - backend
+    image: mysql:${ORDER_DB_IMAGE_TAG:-latest}
+    ports:
+      - 3306:3306
+    environment:
+      MYSQL_DATABASE: ${ORDER_DATABASE:-orders}
+      MYSQL_USER: ${ORDER_DATABASE_USER:-order_db_user}
+      MYSQL_PASSWORD: ${ORDER_DATABASE_PASSWORD:-order_db_password}
+      MYSQL_ROOT_PASSWORD: ${ORDER_DATABASE_ROOT_PASSWORD:-order_db_rootpassword}
+    volumes:
+      - ../src/ObservableShop/Order.Database/db.sql:/docker-entrypoint-initdb.d/init.sql
+  
+  rabbitmq:
+    networks:
+      - backend
+    image: rabbitmq:${RABBITMQ_IMAGE_TAG:-3.9-management}
+    restart: always
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-rabbitmq_user}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-rabbitmq_password}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      
+
+networks:
+  backend:

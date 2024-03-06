@@ -1,0 +1,6 @@
+@Shop.ApiGateway_HostAddress = http://localhost:5188
+
+POST {{Shop.ApiGateway_HostAddress}}/order/
+Accept: application/json
+
+###

@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+option csharp_namespace = "ProductClient";
+
+package product;
+
+message Article {
+  string Id = 1;
+  string Price = 2;
+}
+
+message ArticleResponse {
+  string Id = 1;
+  string Price = 2;
+  bool available = 3;
+}
+
+message ArticlesRequest {
+  repeated Article Articles = 1;
+}
+
+message AvailabilityResponse {
+  repeated ArticleResponse Articles = 1;
+}
+
+service ProductService {
+  rpc CheckAvailability(ArticlesRequest) returns (AvailabilityResponse);
+}
+
+
