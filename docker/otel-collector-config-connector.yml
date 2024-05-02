@@ -1,6 +1,6 @@
 # The receivers are the section that allows the OpenTelemetry Collector to receive data from various sources using Push or Pull model.
 # The receiver name must match the name of the receiver in the service/pipelines/traces/receivers section.
-receivers:  
+receivers:
   otlp:
     protocols:
       grpc:
@@ -22,13 +22,13 @@ exporters:
     endpoint: "http://zipkin:9411/api/v2/spans"
     tls:
       insecure: true
-  
+
   # exports logs to the seq instance
   otlphttp/seq:
     endpoint: "http://seq:5341/ingest/otlp"
     tls:
       insecure: true
-  
+
   # Setting logging level to debug (possibilities to filter log level in a central place)
   debug:
     verbosity: detailed
@@ -53,15 +53,15 @@ processors:
 # The pipelines section contains the configuration for the data pipelines that the OpenTelemetry Collector will run.
 # The name of the pipeline must match the name of the pipeline in the service/pipelines section.
 service:
-  pipelines: 
+  pipelines:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug, zipkin, spanmetrics, otlp]
+      exporters: [debug, zipkin, spanmetrics, otlp, otlphttp/seq]
     metrics:
       receivers: [otlp, rabbitmq]
       processors: [batch]
-      exporters: [debug, prometheus]    
+      exporters: [debug, prometheus]
     logs:
       receivers: [otlp]
       processors: []
